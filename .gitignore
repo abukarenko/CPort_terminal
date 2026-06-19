@@ -1,0 +1,8 @@
+.vs/
+bin/
+obj/
+codex-build-*/
+*.user
+*.suo
+*.log
+*.ini
