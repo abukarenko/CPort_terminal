@@ -3,9 +3,9 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32;
 
-namespace MyFirstWinFormsApp
+namespace CPortTerminal
 {
-    public partial class Form1 : Form
+    public partial class MainForm : Form
     {
         private const int DefaultTerminalLines = 500;
         private const int MinTerminalLines = 16;
@@ -30,7 +30,7 @@ namespace MyFirstWinFormsApp
         private int terminalLineLimit = DefaultTerminalLines;
         private volatile bool hexDisplayEnabled;
 
-        public Form1()
+        public MainForm()
         {
             InitializeComponent();
         }
@@ -41,7 +41,7 @@ namespace MyFirstWinFormsApp
 
         private bool IsConnected => portHandle != InvalidHandleValue;
 
-        private void Form1_Load(object? sender, EventArgs e)
+        private void MainForm_Load(object? sender, EventArgs e)
         {
             trayIcon.Icon = Icon;
             InitLog();
@@ -56,7 +56,7 @@ namespace MyFirstWinFormsApp
             SetStatusMessage("Ready");
         }
 
-        private void Form1_FormClosing(object? sender, FormClosingEventArgs e)
+        private void MainForm_FormClosing(object? sender, FormClosingEventArgs e)
         {
             SaveSettings();
             trayIcon.Visible = false;

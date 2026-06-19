@@ -1,4 +1,4 @@
-namespace MyFirstWinFormsApp
+namespace CPortTerminal
 {
     public sealed class SettingsForm : Form
     {

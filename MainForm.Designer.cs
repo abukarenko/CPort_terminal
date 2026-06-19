@@ -1,6 +1,6 @@
-namespace MyFirstWinFormsApp
+namespace CPortTerminal
 {
-    partial class Form1
+    partial class MainForm
     {
         private System.ComponentModel.IContainer components = null;
         private Panel topPanel;
@@ -357,7 +357,7 @@ namespace MyFirstWinFormsApp
             trayIcon.Visible = true;
             trayIcon.DoubleClick += TrayIcon_DoubleClick;
             // 
-            // Form1
+            // MainForm
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
@@ -372,11 +372,11 @@ namespace MyFirstWinFormsApp
             Controls.Add(topMostCheckBox);
             Controls.Add(closeButton);
             MinimumSize = new Size(320, 240);
-            Name = "Form1";
+            Name = "MainForm";
             StartPosition = FormStartPosition.CenterScreen;
             Text = "COM Port Terminal";
-            FormClosing += Form1_FormClosing;
-            Load += Form1_Load;
+            FormClosing += MainForm_FormClosing;
+            Load += MainForm_Load;
             topPanel.ResumeLayout(false);
             terminalMenu.ResumeLayout(false);
             bottomPanel.ResumeLayout(false);

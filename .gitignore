@@ -2,6 +2,7 @@
 bin/
 obj/
 codex-build-*/
+release*/
 *.user
 *.suo
 *.log
