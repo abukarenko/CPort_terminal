@@ -33,6 +33,12 @@ namespace CPortTerminal
         public MainForm()
         {
             InitializeComponent();
+
+            System.Drawing.Icon? applicationIcon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+            if (applicationIcon != null)
+            {
+                Icon = applicationIcon;
+            }
         }
 
         private string SettingsFileName => Path.ChangeExtension(Application.ExecutablePath, ".ini");

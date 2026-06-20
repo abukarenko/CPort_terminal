@@ -6,6 +6,7 @@
 - Removed the unconditional `SetRts` call that previously asserted RTS whenever a port opened.
 - Persisted the RTS choice in the application `.ini` file.
 - Kept RTS and DTR settings read-only while a port is open, so the selected line state always matches the active connection.
+- Added a terminal-style application icon for the window, taskbar, tray, and executable.
 
 ### Important
 
