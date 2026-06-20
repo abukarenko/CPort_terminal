@@ -33,6 +33,12 @@ namespace CPortTerminal
         public MainForm()
         {
             InitializeComponent();
+
+            System.Drawing.Icon? applicationIcon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+            if (applicationIcon != null)
+            {
+                Icon = applicationIcon;
+            }
         }
 
         private string SettingsFileName => Path.ChangeExtension(Application.ExecutablePath, ".ini");
@@ -168,6 +174,12 @@ namespace CPortTerminal
                 dtrCheckBox.Checked = dtrValue;
             }
 
+            if (settings.TryGetValue("RtsOnOpen", out string? rtsOnOpen)
+                && bool.TryParse(rtsOnOpen, out bool rtsValue))
+            {
+                rtsCheckBox.Checked = rtsValue;
+            }
+
             if (settings.TryGetValue("BufferLines", out string? bufferLines)
                 && int.TryParse(bufferLines, out int lineLimit))
             {
@@ -193,6 +205,7 @@ namespace CPortTerminal
                     "SendText=" + sendTextBox.Text,
                     "StayOnTop=" + TopMost.ToString(),
                     "DtrOnOpen=" + dtrCheckBox.Checked.ToString(),
+                    "RtsOnOpen=" + rtsCheckBox.Checked.ToString(),
                     "BufferLines=" + terminalLineLimit.ToString(),
                     "HexDisplay=" + hexCheckBox.Checked.ToString()
                 });
@@ -242,6 +255,7 @@ namespace CPortTerminal
             sendButton.Enabled = connected;
             crLfCheckBox.Enabled = connected;
             dtrCheckBox.Enabled = !connected;
+            rtsCheckBox.Enabled = !connected;
             terminalOpenCloseItem.Text = connected ? "Close" : "Open";
             terminalTextBox.BackColor = connected ? ConnectedTerminalBackColor : DisconnectedTerminalBackColor;
             UpdatePortStatus();
@@ -391,7 +405,10 @@ namespace CPortTerminal
             SetupComm(portHandle, 4096, 4096);
             PurgeComm(portHandle, PurgeRxClear | PurgeTxClear);
             EscapeCommFunction(portHandle, dtrCheckBox.Checked ? SetDtr : ClearDtr);
-            EscapeCommFunction(portHandle, SetRts);
+            if (rtsCheckBox.Checked)
+            {
+                EscapeCommFunction(portHandle, SetRts);
+            }
 
             readerStopping = false;
             readerThread = new Thread(ReadLoop)
