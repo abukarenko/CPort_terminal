@@ -5,6 +5,7 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <AssemblyName>CPortTerminal</AssemblyName>
     <RootNamespace>CPortTerminal</RootNamespace>
+    <Version>1.1.0</Version>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>

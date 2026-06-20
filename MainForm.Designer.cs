@@ -10,6 +10,7 @@ namespace CPortTerminal
         private Button closeButton;
         private Button exitButton;
         private CheckBox dtrCheckBox;
+        private CheckBox rtsCheckBox;
         private CheckBox holdCheckBox;
         private CheckBox hexCheckBox;
         private CheckBox topMostCheckBox;
@@ -51,6 +52,7 @@ namespace CPortTerminal
             exitButton = new Button();
             closeButton = new Button();
             dtrCheckBox = new CheckBox();
+            rtsCheckBox = new CheckBox();
             holdCheckBox = new CheckBox();
             hexCheckBox = new CheckBox();
             portComboBox = new ComboBox();
@@ -86,6 +88,7 @@ namespace CPortTerminal
             // 
             topPanel.Controls.Add(openButton);
             topPanel.Controls.Add(dtrCheckBox);
+            topPanel.Controls.Add(rtsCheckBox);
             topPanel.Controls.Add(holdCheckBox);
             topPanel.Controls.Add(hexCheckBox);
             topPanel.Controls.Add(exitButton);
@@ -139,14 +142,24 @@ namespace CPortTerminal
             dtrCheckBox.TabIndex = 2;
             dtrCheckBox.Text = "DTR";
             dtrCheckBox.UseVisualStyleBackColor = true;
-            // 
+            //
+            // rtsCheckBox
+            //
+            rtsCheckBox.AutoSize = true;
+            rtsCheckBox.Location = new Point(174, 14);
+            rtsCheckBox.Name = "rtsCheckBox";
+            rtsCheckBox.Size = new Size(47, 19);
+            rtsCheckBox.TabIndex = 3;
+            rtsCheckBox.Text = "RTS";
+            rtsCheckBox.UseVisualStyleBackColor = true;
+            //
             // holdCheckBox
             // 
             holdCheckBox.AutoSize = true;
-            holdCheckBox.Location = new Point(174, 14);
+            holdCheckBox.Location = new Point(232, 14);
             holdCheckBox.Name = "holdCheckBox";
             holdCheckBox.Size = new Size(58, 19);
-            holdCheckBox.TabIndex = 3;
+            holdCheckBox.TabIndex = 4;
             holdCheckBox.Text = "HOLD";
             holdCheckBox.UseVisualStyleBackColor = true;
             holdCheckBox.CheckedChanged += HoldCheckBox_CheckedChanged;
@@ -154,10 +167,10 @@ namespace CPortTerminal
             // hexCheckBox
             // 
             hexCheckBox.AutoSize = true;
-            hexCheckBox.Location = new Point(244, 14);
+            hexCheckBox.Location = new Point(302, 14);
             hexCheckBox.Name = "hexCheckBox";
             hexCheckBox.Size = new Size(48, 19);
-            hexCheckBox.TabIndex = 4;
+            hexCheckBox.TabIndex = 5;
             hexCheckBox.Text = "HEX";
             hexCheckBox.UseVisualStyleBackColor = true;
             hexCheckBox.CheckedChanged += HexCheckBox_CheckedChanged;
