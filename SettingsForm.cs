@@ -8,6 +8,7 @@ namespace CPortTerminal
         private readonly CheckBox topMostCheckBox;
         private readonly Button okButton;
         private readonly Button cancelButton;
+        private Image? camouflageSkin;
 
         public SettingsForm(IEnumerable<string> ports, string selectedPort, IEnumerable<string> baudRates,
             string selectedBaudRate, bool stayOnTop, bool serialSettingsEnabled, int bufferLines)
@@ -115,6 +116,60 @@ namespace CPortTerminal
                 okButton,
                 cancelButton
             });
+
+            ApplyCamouflageSkin();
+        }
+
+        private void ApplyCamouflageSkin()
+        {
+            string skinPath = Path.Combine(AppContext.BaseDirectory, "Assets", "CamoSkin.png");
+            if (!File.Exists(skinPath))
+            {
+                return;
+            }
+
+            camouflageSkin = Image.FromFile(skinPath);
+            BackgroundImage = camouflageSkin;
+            BackgroundImageLayout = ImageLayout.Tile;
+
+            Color textColor = Color.FromArgb(240, 235, 202);
+            Color controlColor = Color.FromArgb(30, 36, 22);
+            Color buttonColor = Color.FromArgb(58, 70, 37);
+            Color buttonBorderColor = Color.FromArgb(149, 142, 90);
+
+            foreach (Label label in Controls.OfType<Label>())
+            {
+                label.BackColor = Color.Transparent;
+                label.ForeColor = textColor;
+            }
+
+            topMostCheckBox.BackColor = Color.Transparent;
+            topMostCheckBox.ForeColor = textColor;
+
+            foreach (Control control in new Control[] { portComboBox, baudComboBox, bufferLinesUpDown })
+            {
+                control.BackColor = controlColor;
+                control.ForeColor = textColor;
+            }
+
+            foreach (Button button in new[] { okButton, cancelButton })
+            {
+                button.FlatStyle = FlatStyle.Flat;
+                button.UseVisualStyleBackColor = false;
+                button.BackColor = buttonColor;
+                button.ForeColor = textColor;
+                button.FlatAppearance.BorderColor = buttonBorderColor;
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                camouflageSkin?.Dispose();
+            }
+
+            base.Dispose(disposing);
         }
 
         public string SelectedPort => portComboBox.Text;

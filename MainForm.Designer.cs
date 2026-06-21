@@ -39,6 +39,7 @@ namespace CPortTerminal
             if (disposing)
             {
                 camouflageSkin?.Dispose();
+                macroToolTip.Dispose();
             }
 
             if (disposing && (components != null))
@@ -277,16 +278,16 @@ namespace CPortTerminal
             bottomPanel.Controls.Add(sendButton);
             bottomPanel.Controls.Add(crLfCheckBox);
             bottomPanel.Dock = DockStyle.Bottom;
-            bottomPanel.Location = new Point(0, 455);
+            bottomPanel.Location = new Point(0, 422);
             bottomPanel.Name = "bottomPanel";
             bottomPanel.Padding = new Padding(10, 8, 10, 8);
-            bottomPanel.Size = new Size(1017, 45);
+            bottomPanel.Size = new Size(1017, 78);
             bottomPanel.TabIndex = 2;
             // 
             // sendTextBox
             // 
             sendTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            sendTextBox.Location = new Point(12, 11);
+            sendTextBox.Location = new Point(12, 43);
             sendTextBox.Name = "sendTextBox";
             sendTextBox.Size = new Size(807, 23);
             sendTextBox.TabIndex = 0;
@@ -295,7 +296,7 @@ namespace CPortTerminal
             // sendButton
             // 
             sendButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            sendButton.Location = new Point(831, 10);
+            sendButton.Location = new Point(831, 42);
             sendButton.Name = "sendButton";
             sendButton.Size = new Size(90, 25);
             sendButton.TabIndex = 1;
@@ -309,7 +310,7 @@ namespace CPortTerminal
             crLfCheckBox.AutoSize = true;
             crLfCheckBox.Checked = true;
             crLfCheckBox.CheckState = CheckState.Checked;
-            crLfCheckBox.Location = new Point(939, 14);
+            crLfCheckBox.Location = new Point(939, 46);
             crLfCheckBox.Name = "crLfCheckBox";
             crLfCheckBox.Size = new Size(58, 19);
             crLfCheckBox.TabIndex = 2;

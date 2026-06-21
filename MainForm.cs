@@ -12,6 +12,7 @@ namespace CPortTerminal
         private const int MaxTerminalLines = 5000;
         private const int HexBytesPerLine = 32;
         private const int MaxLogData = 512;
+        private const int MacroButtonCount = 10;
         private static readonly Color ConnectedTerminalBackColor = Color.FromArgb(0, 32, 0);
         private static readonly Color DisconnectedTerminalBackColor = Color.FromArgb(0, 0, 0);
         private static readonly IntPtr InvalidHandleValue = new(-1);
@@ -30,10 +31,15 @@ namespace CPortTerminal
         private int terminalLineLimit = DefaultTerminalLines;
         private volatile bool hexDisplayEnabled;
         private Image? camouflageSkin;
+        private readonly string[] macroTexts = new string[MacroButtonCount];
+        private readonly Button[] macroButtons = new Button[MacroButtonCount];
+        private readonly ToolTip macroToolTip = new();
+        private FlowLayoutPanel? macroPanel;
 
         public MainForm()
         {
             InitializeComponent();
+            InitializeMacroButtons();
 
             System.Drawing.Icon? applicationIcon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             if (applicationIcon != null)
@@ -42,6 +48,40 @@ namespace CPortTerminal
             }
 
             ApplyCamouflageSkin();
+        }
+
+        private void InitializeMacroButtons()
+        {
+            bottomPanel.Height = 78;
+            sendTextBox.Top = 43;
+            sendButton.Top = 42;
+            crLfCheckBox.Top = 46;
+
+            macroPanel = new FlowLayoutPanel
+            {
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                AutoScroll = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                Location = new Point(12, 7),
+                Size = new Size(bottomPanel.ClientSize.Width - 24, 28),
+                WrapContents = false
+            };
+            bottomPanel.Controls.Add(macroPanel);
+
+            for (int index = 0; index < MacroButtonCount; index++)
+            {
+                Button button = new()
+                {
+                    Margin = new Padding(0, 0, 4, 0),
+                    Size = new Size(44, 24),
+                    Tag = index,
+                    Text = $"F{index + 1}"
+                };
+                button.MouseClick += MacroButton_MouseClick;
+                macroButtons[index] = button;
+                macroPanel.Controls.Add(button);
+                UpdateMacroHint(index);
+            }
         }
 
         private void ApplyCamouflageSkin()
@@ -60,13 +100,18 @@ namespace CPortTerminal
             Color buttonColor = Color.FromArgb(58, 70, 37);
             Color buttonBorderColor = Color.FromArgb(149, 142, 90);
 
-            foreach (Button button in new[] { openButton, exitButton, sendButton })
+            foreach (Button button in new[] { openButton, exitButton, sendButton }.Concat(macroButtons))
             {
                 button.FlatStyle = FlatStyle.Flat;
                 button.UseVisualStyleBackColor = false;
                 button.BackColor = buttonColor;
                 button.ForeColor = textColor;
                 button.FlatAppearance.BorderColor = buttonBorderColor;
+            }
+
+            if (macroPanel != null)
+            {
+                ApplySkin(macroPanel);
             }
 
             foreach (CheckBox checkBox in new[] { dtrCheckBox, rtsCheckBox, holdCheckBox, hexCheckBox, crLfCheckBox })
@@ -192,6 +237,7 @@ namespace CPortTerminal
         private void LoadSettings()
         {
             Dictionary<string, string> settings = ReadSettingsFile();
+            RestoreWindowBounds(settings);
 
             if (settings.TryGetValue("Port", out string? port) && portComboBox.Items.Contains(port))
             {
@@ -206,6 +252,16 @@ namespace CPortTerminal
             if (settings.TryGetValue("SendText", out string? sendText))
             {
                 sendTextBox.Text = sendText;
+            }
+
+            for (int index = 0; index < MacroButtonCount; index++)
+            {
+                if (settings.TryGetValue($"MacroF{index + 1}", out string? macroText))
+                {
+                    macroTexts[index] = macroText;
+                }
+
+                UpdateMacroHint(index);
             }
 
             if (settings.TryGetValue("StayOnTop", out string? stayOnTop)
@@ -244,7 +300,8 @@ namespace CPortTerminal
         {
             try
             {
-                File.WriteAllLines(SettingsFileName, new[]
+                Rectangle windowBounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+                List<string> settings = new()
                 {
                     "Port=" + portComboBox.Text,
                     "Baud=" + baudComboBox.Text,
@@ -253,13 +310,61 @@ namespace CPortTerminal
                     "DtrOnOpen=" + dtrCheckBox.Checked.ToString(),
                     "RtsOnOpen=" + rtsCheckBox.Checked.ToString(),
                     "BufferLines=" + terminalLineLimit.ToString(),
-                    "HexDisplay=" + hexCheckBox.Checked.ToString()
-                });
+                    "HexDisplay=" + hexCheckBox.Checked.ToString(),
+                    "WindowLeft=" + windowBounds.Left.ToString(),
+                    "WindowTop=" + windowBounds.Top.ToString(),
+                    "WindowWidth=" + windowBounds.Width.ToString(),
+                    "WindowHeight=" + windowBounds.Height.ToString()
+                };
+
+                settings.AddRange(macroTexts.Select((macroText, index) => $"MacroF{index + 1}={macroText}"));
+                File.WriteAllLines(SettingsFileName, settings);
             }
             catch (Exception ex)
             {
                 LogEvent("SETTINGS SAVE ERROR " + ex.Message);
             }
+        }
+
+        private void RestoreWindowBounds(IReadOnlyDictionary<string, string> settings)
+        {
+            if (!TryReadWindowBounds(settings, out Rectangle savedBounds))
+            {
+                return;
+            }
+
+            if (Screen.AllScreens.Any(screen => screen.WorkingArea.Contains(savedBounds)))
+            {
+                StartPosition = FormStartPosition.Manual;
+                Bounds = savedBounds;
+                return;
+            }
+
+            Screen screenForCentering = Screen.PrimaryScreen ?? Screen.FromControl(this);
+            Rectangle workingArea = screenForCentering.WorkingArea;
+            Size = new Size(
+                Math.Min(savedBounds.Width, workingArea.Width),
+                Math.Min(savedBounds.Height, workingArea.Height));
+            StartPosition = FormStartPosition.Manual;
+            Location = new Point(
+                workingArea.Left + (workingArea.Width - Width) / 2,
+                workingArea.Top + (workingArea.Height - Height) / 2);
+        }
+
+        private bool TryReadWindowBounds(IReadOnlyDictionary<string, string> settings, out Rectangle bounds)
+        {
+            bounds = Rectangle.Empty;
+            return settings.TryGetValue("WindowLeft", out string? leftValue)
+                && settings.TryGetValue("WindowTop", out string? topValue)
+                && settings.TryGetValue("WindowWidth", out string? widthValue)
+                && settings.TryGetValue("WindowHeight", out string? heightValue)
+                && int.TryParse(leftValue, out int left)
+                && int.TryParse(topValue, out int top)
+                && int.TryParse(widthValue, out int width)
+                && int.TryParse(heightValue, out int height)
+                && width >= MinimumSize.Width
+                && height >= MinimumSize.Height
+                && (bounds = new Rectangle(left, top, width, height)) != Rectangle.Empty;
         }
 
         private Dictionary<string, string> ReadSettingsFile()
@@ -719,6 +824,68 @@ namespace CPortTerminal
         private void SendButton_Click(object? sender, EventArgs e)
         {
             SendText(sendTextBox.Text);
+        }
+
+        private void MacroButton_MouseClick(object? sender, MouseEventArgs e)
+        {
+            if (sender is not Button { Tag: int index })
+            {
+                return;
+            }
+
+            if (e.Button == MouseButtons.Right)
+            {
+                SetMacroFromSendText(index);
+                return;
+            }
+
+            if (e.Button != MouseButtons.Left)
+            {
+                return;
+            }
+
+            string macroText = macroTexts[index];
+            if (string.IsNullOrEmpty(macroText))
+            {
+                SetStatusMessage($"F{index + 1} is empty");
+                return;
+            }
+
+            sendTextBox.Text = macroText;
+            if (IsConnected)
+            {
+                SendText(macroText);
+            }
+            else
+            {
+                SetStatusMessage($"F{index + 1} copied; port is closed");
+            }
+        }
+
+        private void SetMacroFromSendText(int index)
+        {
+            DialogResult result = MessageBox.Show(
+                $"Set F{index + 1} to the current send text?",
+                $"Set F{index + 1}",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+            if (result != DialogResult.Yes)
+            {
+                return;
+            }
+
+            macroTexts[index] = sendTextBox.Text;
+            UpdateMacroHint(index);
+            SaveSettings();
+            SetStatusMessage($"F{index + 1} saved");
+        }
+
+        private void UpdateMacroHint(int index)
+        {
+            string hint = string.IsNullOrEmpty(macroTexts[index])
+                ? $"F{index + 1} is empty"
+                : macroTexts[index];
+            macroToolTip.SetToolTip(macroButtons[index], hint);
         }
 
         private void SendTextBox_KeyDown(object? sender, KeyEventArgs e)
