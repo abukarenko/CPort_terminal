@@ -18,6 +18,7 @@ namespace CPortTerminal
         private Panel bottomPanel;
         private TextBox sendTextBox;
         private Button sendButton;
+        private CheckBox clsCheckBox;
         private CheckBox crLfCheckBox;
         private NotifyIcon trayIcon;
         private ContextMenuStrip trayMenu;
@@ -75,6 +76,7 @@ namespace CPortTerminal
             bottomPanel = new Panel();
             sendTextBox = new TextBox();
             sendButton = new Button();
+            clsCheckBox = new CheckBox();
             crLfCheckBox = new CheckBox();
             trayMenu = new ContextMenuStrip(components);
             traySettingsItem = new ToolStripMenuItem();
@@ -277,6 +279,7 @@ namespace CPortTerminal
             // 
             bottomPanel.Controls.Add(sendTextBox);
             bottomPanel.Controls.Add(sendButton);
+            bottomPanel.Controls.Add(clsCheckBox);
             bottomPanel.Controls.Add(crLfCheckBox);
             bottomPanel.Dock = DockStyle.Bottom;
             bottomPanel.Location = new Point(0, 422);
@@ -304,6 +307,17 @@ namespace CPortTerminal
             sendButton.Text = "Send";
             sendButton.UseVisualStyleBackColor = true;
             sendButton.Click += SendButton_Click;
+            //
+            // clsCheckBox
+            //
+            clsCheckBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            clsCheckBox.AutoSize = true;
+            clsCheckBox.Location = new Point(939, 21);
+            clsCheckBox.Name = "clsCheckBox";
+            clsCheckBox.Size = new Size(45, 19);
+            clsCheckBox.TabIndex = 2;
+            clsCheckBox.Text = "CLS";
+            clsCheckBox.UseVisualStyleBackColor = true;
             // 
             // crLfCheckBox
             // 
@@ -314,7 +328,7 @@ namespace CPortTerminal
             crLfCheckBox.Location = new Point(939, 46);
             crLfCheckBox.Name = "crLfCheckBox";
             crLfCheckBox.Size = new Size(58, 19);
-            crLfCheckBox.TabIndex = 2;
+            crLfCheckBox.TabIndex = 3;
             crLfCheckBox.Text = "CR/LF";
             crLfCheckBox.UseVisualStyleBackColor = true;
             // 

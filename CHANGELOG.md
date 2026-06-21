@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2 - 2026-06-21
+
+- Removed confirmation from macro assignment.
+- Added the CLS option to clear the terminal before sending, with a hover hint.
+- Fixed CR/LF persistence and exact macro playback.
+
 ## 1.2.1 - 2026-06-21
 
 - Added a dedicated `Assign` context menu for F1-F10 macro buttons.
