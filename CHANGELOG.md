@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1 - 2026-06-21
+
+- Added a dedicated `Assign` context menu for F1-F10 macro buttons.
+- Saved CR/LF as part of a macro command and prevented a second CR/LF from being appended when it is sent.
+- Removed the terminal context menu from non-terminal controls.
+
 ## 1.2.0 - 2026-06-21
 
 - Saved and restored the main window position and size; an off-screen window is centered safely after display changes.
