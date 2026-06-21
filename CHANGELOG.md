@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1 - 2026-06-21
+
+- Added a khaki camouflage skin to the control panels.
+- Styled buttons, checkboxes, input, and status bar in a high-contrast field palette.
+- Kept the terminal display black and green for readability.
+
 ## 1.1.0 - 2026-06-21
 
 - Added an explicit **RTS** option beside **DTR**. It is disabled by default.

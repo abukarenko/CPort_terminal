@@ -6,6 +6,7 @@ Windows Forms COM port terminal for testing serial devices.
 
 - Open and close COM ports with selectable baud rate.
 - Terminal-style application icon in the window title, taskbar, tray, and executable.
+- Khaki camouflage skin on the control panels, while the terminal remains high-contrast.
 - Optional DTR and RTS control on port open. RTS is off by default, so the terminal does not assert it itself; the serial driver may still release the line when the port is closed.
 - HOLD mode to freeze terminal output while buffering incoming data.
 - HEX display mode with 32 bytes per line and text view.

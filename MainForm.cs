@@ -29,6 +29,7 @@ namespace CPortTerminal
         private uint pendingRxBytes;
         private int terminalLineLimit = DefaultTerminalLines;
         private volatile bool hexDisplayEnabled;
+        private Image? camouflageSkin;
 
         public MainForm()
         {
@@ -39,6 +40,51 @@ namespace CPortTerminal
             {
                 Icon = applicationIcon;
             }
+
+            ApplyCamouflageSkin();
+        }
+
+        private void ApplyCamouflageSkin()
+        {
+            string skinPath = Path.Combine(AppContext.BaseDirectory, "Assets", "CamoSkin.png");
+            if (!File.Exists(skinPath))
+            {
+                return;
+            }
+
+            camouflageSkin = Image.FromFile(skinPath);
+            ApplySkin(topPanel);
+            ApplySkin(bottomPanel);
+
+            Color textColor = Color.FromArgb(240, 235, 202);
+            Color buttonColor = Color.FromArgb(58, 70, 37);
+            Color buttonBorderColor = Color.FromArgb(149, 142, 90);
+
+            foreach (Button button in new[] { openButton, exitButton, sendButton })
+            {
+                button.FlatStyle = FlatStyle.Flat;
+                button.UseVisualStyleBackColor = false;
+                button.BackColor = buttonColor;
+                button.ForeColor = textColor;
+                button.FlatAppearance.BorderColor = buttonBorderColor;
+            }
+
+            foreach (CheckBox checkBox in new[] { dtrCheckBox, rtsCheckBox, holdCheckBox, hexCheckBox, crLfCheckBox })
+            {
+                checkBox.BackColor = Color.Transparent;
+                checkBox.ForeColor = textColor;
+            }
+
+            sendTextBox.BackColor = Color.FromArgb(30, 36, 22);
+            sendTextBox.ForeColor = textColor;
+            statusStrip.BackColor = Color.FromArgb(36, 45, 25);
+            statusStrip.ForeColor = textColor;
+        }
+
+        private void ApplySkin(Control control)
+        {
+            control.BackgroundImage = camouflageSkin;
+            control.BackgroundImageLayout = ImageLayout.Tile;
         }
 
         private string SettingsFileName => Path.ChangeExtension(Application.ExecutablePath, ".ini");
