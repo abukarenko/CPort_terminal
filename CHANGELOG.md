@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 - 2026-06-21
+
+- Saved and restored the main window position and size; an off-screen window is centered safely after display changes.
+- Applied the camouflage skin to the Settings dialog.
+- Added ten saved-send macros, F1 through F10, with confirmation on right-click and immediate send on left-click.
+- Added hover hints showing the command assigned to each macro button.
+
 ## 1.1.1 - 2026-06-21
 
 - Added a khaki camouflage skin to the control panels.
