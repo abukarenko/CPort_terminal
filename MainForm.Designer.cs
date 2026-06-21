@@ -36,6 +36,11 @@ namespace CPortTerminal
 
         protected override void Dispose(bool disposing)
         {
+            if (disposing)
+            {
+                camouflageSkin?.Dispose();
+            }
+
             if (disposing && (components != null))
             {
                 components.Dispose();
