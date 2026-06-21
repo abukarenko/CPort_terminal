@@ -69,6 +69,8 @@ namespace CPortTerminal
                 WrapContents = false
             };
             bottomPanel.Controls.Add(macroPanel);
+            macroPanel.SendToBack();
+            macroToolTip.SetToolTip(clsCheckBox, "Clear screen before sending");
             assignMacroItem.Click += AssignMacroItem_Click;
             macroMenu.Items.Add(assignMacroItem);
 
@@ -120,7 +122,7 @@ namespace CPortTerminal
                 ApplySkin(macroPanel);
             }
 
-            foreach (CheckBox checkBox in new[] { dtrCheckBox, rtsCheckBox, holdCheckBox, hexCheckBox, crLfCheckBox })
+            foreach (CheckBox checkBox in new[] { dtrCheckBox, rtsCheckBox, holdCheckBox, hexCheckBox, clsCheckBox, crLfCheckBox })
             {
                 checkBox.BackColor = Color.Transparent;
                 checkBox.ForeColor = textColor;
@@ -264,7 +266,7 @@ namespace CPortTerminal
             {
                 if (settings.TryGetValue($"MacroF{index + 1}", out string? macroText))
                 {
-                    macroTexts[index] = macroText;
+                    macroTexts[index] = DecodeMacroText(macroText);
                 }
 
                 UpdateMacroHint(index);
@@ -286,6 +288,18 @@ namespace CPortTerminal
                 && bool.TryParse(rtsOnOpen, out bool rtsValue))
             {
                 rtsCheckBox.Checked = rtsValue;
+            }
+
+            if (settings.TryGetValue("CrLf", out string? crLf)
+                && bool.TryParse(crLf, out bool crLfValue))
+            {
+                crLfCheckBox.Checked = crLfValue;
+            }
+
+            if (settings.TryGetValue("ClearBeforeSend", out string? clearBeforeSend)
+                && bool.TryParse(clearBeforeSend, out bool clearValue))
+            {
+                clsCheckBox.Checked = clearValue;
             }
 
             if (settings.TryGetValue("BufferLines", out string? bufferLines)
@@ -315,6 +329,8 @@ namespace CPortTerminal
                     "StayOnTop=" + TopMost.ToString(),
                     "DtrOnOpen=" + dtrCheckBox.Checked.ToString(),
                     "RtsOnOpen=" + rtsCheckBox.Checked.ToString(),
+                    "CrLf=" + crLfCheckBox.Checked.ToString(),
+                    "ClearBeforeSend=" + clsCheckBox.Checked.ToString(),
                     "BufferLines=" + terminalLineLimit.ToString(),
                     "HexDisplay=" + hexCheckBox.Checked.ToString(),
                     "WindowLeft=" + windowBounds.Left.ToString(),
@@ -323,7 +339,8 @@ namespace CPortTerminal
                     "WindowHeight=" + windowBounds.Height.ToString()
                 };
 
-                settings.AddRange(macroTexts.Select((macroText, index) => $"MacroF{index + 1}={macroText}"));
+                settings.AddRange(macroTexts.Select((macroText, index) =>
+                    $"MacroF{index + 1}=base64:{EncodeMacroText(macroText)}"));
                 File.WriteAllLines(SettingsFileName, settings);
             }
             catch (Exception ex)
@@ -411,6 +428,7 @@ namespace CPortTerminal
             sendTextBox.Enabled = connected;
             sendButton.Enabled = connected;
             crLfCheckBox.Enabled = connected;
+            clsCheckBox.Enabled = connected;
             dtrCheckBox.Enabled = !connected;
             rtsCheckBox.Enabled = !connected;
             terminalOpenCloseItem.Text = connected ? "Close" : "Open";
@@ -864,16 +882,6 @@ namespace CPortTerminal
 
         private void SetMacroFromSendText(int index)
         {
-            DialogResult result = MessageBox.Show(
-                $"Set F{index + 1} to the current send text?",
-                $"Set F{index + 1}",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question);
-            if (result != DialogResult.Yes)
-            {
-                return;
-            }
-
             macroTexts[index] = crLfCheckBox.Checked
                 ? sendTextBox.Text + "\r\n"
                 : sendTextBox.Text;
@@ -914,6 +922,29 @@ namespace CPortTerminal
                 : text;
         }
 
+        private static string EncodeMacroText(string text)
+        {
+            return Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+        }
+
+        private static string DecodeMacroText(string text)
+        {
+            const string prefix = "base64:";
+            if (!text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return text;
+            }
+
+            try
+            {
+                return Encoding.UTF8.GetString(Convert.FromBase64String(text[prefix.Length..]));
+            }
+            catch (FormatException)
+            {
+                return string.Empty;
+            }
+        }
+
         private void SendTextBox_KeyDown(object? sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Enter)
@@ -928,6 +959,11 @@ namespace CPortTerminal
             if (!IsConnected)
             {
                 return;
+            }
+
+            if (clsCheckBox.Checked)
+            {
+                ClearTerminal();
             }
 
             string outgoingText = appendCrLf && crLfCheckBox.Checked ? text + "\r\n" : text;
@@ -1066,6 +1102,11 @@ namespace CPortTerminal
         }
 
         private void ClearTerminalItem_Click(object? sender, EventArgs e)
+        {
+            ClearTerminal();
+        }
+
+        private void ClearTerminal()
         {
             terminalBuffer.Clear();
             lock (pendingTerminalLock)
