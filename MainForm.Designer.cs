@@ -40,6 +40,7 @@ namespace CPortTerminal
             {
                 camouflageSkin?.Dispose();
                 macroToolTip.Dispose();
+                macroMenu.Dispose();
             }
 
             if (disposing && (components != null))
@@ -381,7 +382,6 @@ namespace CPortTerminal
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(1017, 524);
-            ContextMenuStrip = terminalMenu;
             Controls.Add(terminalTextBox);
             Controls.Add(bottomPanel);
             Controls.Add(statusStrip);

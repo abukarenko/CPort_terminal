@@ -34,6 +34,8 @@ namespace CPortTerminal
         private readonly string[] macroTexts = new string[MacroButtonCount];
         private readonly Button[] macroButtons = new Button[MacroButtonCount];
         private readonly ToolTip macroToolTip = new();
+        private readonly ContextMenuStrip macroMenu = new();
+        private readonly ToolStripMenuItem assignMacroItem = new("Assign");
         private FlowLayoutPanel? macroPanel;
 
         public MainForm()
@@ -67,6 +69,8 @@ namespace CPortTerminal
                 WrapContents = false
             };
             bottomPanel.Controls.Add(macroPanel);
+            assignMacroItem.Click += AssignMacroItem_Click;
+            macroMenu.Items.Add(assignMacroItem);
 
             for (int index = 0; index < MacroButtonCount; index++)
             {
@@ -78,6 +82,8 @@ namespace CPortTerminal
                     Text = $"F{index + 1}"
                 };
                 button.MouseClick += MacroButton_MouseClick;
+                button.MouseDown += MacroButton_MouseDown;
+                button.ContextMenuStrip = macroMenu;
                 macroButtons[index] = button;
                 macroPanel.Controls.Add(button);
                 UpdateMacroHint(index);
@@ -833,12 +839,6 @@ namespace CPortTerminal
                 return;
             }
 
-            if (e.Button == MouseButtons.Right)
-            {
-                SetMacroFromSendText(index);
-                return;
-            }
-
             if (e.Button != MouseButtons.Left)
             {
                 return;
@@ -851,10 +851,10 @@ namespace CPortTerminal
                 return;
             }
 
-            sendTextBox.Text = macroText;
+            sendTextBox.Text = RemoveTrailingCrLf(macroText);
             if (IsConnected)
             {
-                SendText(macroText);
+                SendText(macroText, appendCrLf: false);
             }
             else
             {
@@ -874,7 +874,9 @@ namespace CPortTerminal
                 return;
             }
 
-            macroTexts[index] = sendTextBox.Text;
+            macroTexts[index] = crLfCheckBox.Checked
+                ? sendTextBox.Text + "\r\n"
+                : sendTextBox.Text;
             UpdateMacroHint(index);
             SaveSettings();
             SetStatusMessage($"F{index + 1} saved");
@@ -884,8 +886,32 @@ namespace CPortTerminal
         {
             string hint = string.IsNullOrEmpty(macroTexts[index])
                 ? $"F{index + 1} is empty"
-                : macroTexts[index];
+                : macroTexts[index].Replace("\r", "\\r").Replace("\n", "\\n");
             macroToolTip.SetToolTip(macroButtons[index], hint);
+        }
+
+        private void MacroButton_MouseDown(object? sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Right && sender is Button button)
+            {
+                button.Focus();
+            }
+        }
+
+        private void AssignMacroItem_Click(object? sender, EventArgs e)
+        {
+            if (macroMenu.SourceControl is Button { Tag: int index } button)
+            {
+                button.Focus();
+                SetMacroFromSendText(index);
+            }
+        }
+
+        private static string RemoveTrailingCrLf(string text)
+        {
+            return text.EndsWith("\r\n", StringComparison.Ordinal)
+                ? text[..^2]
+                : text;
         }
 
         private void SendTextBox_KeyDown(object? sender, KeyEventArgs e)
@@ -897,14 +923,14 @@ namespace CPortTerminal
             }
         }
 
-        private void SendText(string text)
+        private void SendText(string text, bool appendCrLf = true)
         {
             if (!IsConnected)
             {
                 return;
             }
 
-            string outgoingText = crLfCheckBox.Checked ? text + "\r\n" : text;
+            string outgoingText = appendCrLf && crLfCheckBox.Checked ? text + "\r\n" : text;
             byte[] data = Encoding.Default.GetBytes(outgoingText);
 
             if (!WriteFile(portHandle, data, (uint)data.Length, out uint written, IntPtr.Zero))
