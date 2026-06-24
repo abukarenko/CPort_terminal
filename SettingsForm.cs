@@ -6,12 +6,14 @@ namespace CPortTerminal
         private readonly ComboBox baudComboBox;
         private readonly NumericUpDown bufferLinesUpDown;
         private readonly CheckBox topMostCheckBox;
+        private readonly Button echoColorButton;
         private readonly Button okButton;
         private readonly Button cancelButton;
+        private Color echoColor;
         private Image? camouflageSkin;
 
         public SettingsForm(IEnumerable<string> ports, string selectedPort, IEnumerable<string> baudRates,
-            string selectedBaudRate, bool stayOnTop, bool serialSettingsEnabled, int bufferLines)
+            string selectedBaudRate, bool stayOnTop, bool serialSettingsEnabled, int bufferLines, Color selectedEchoColor)
         {
             Text = "Settings";
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -78,10 +80,26 @@ namespace CPortTerminal
                 Value = Math.Clamp(bufferLines, 16, 5000)
             };
 
+            Label echoColorLabel = new()
+            {
+                AutoSize = true,
+                Location = new Point(18, 136),
+                Text = "Echo color"
+            };
+
+            echoColor = selectedEchoColor;
+            echoColorButton = new Button
+            {
+                Location = new Point(130, 132),
+                Size = new Size(96, 25)
+            };
+            echoColorButton.Click += EchoColorButton_Click;
+            UpdateEchoColorButton();
+
             topMostCheckBox = new CheckBox
             {
                 AutoSize = true,
-                Location = new Point(130, 135),
+                Location = new Point(130, 164),
                 Text = "Always on top",
                 Checked = stayOnTop
             };
@@ -112,6 +130,8 @@ namespace CPortTerminal
                 baudComboBox,
                 bufferLinesLabel,
                 bufferLinesUpDown,
+                echoColorLabel,
+                echoColorButton,
                 topMostCheckBox,
                 okButton,
                 cancelButton
@@ -152,6 +172,11 @@ namespace CPortTerminal
                 control.ForeColor = textColor;
             }
 
+            echoColorButton.FlatStyle = FlatStyle.Flat;
+            echoColorButton.UseVisualStyleBackColor = false;
+            echoColorButton.FlatAppearance.BorderColor = buttonBorderColor;
+            UpdateEchoColorButton();
+
             foreach (Button button in new[] { okButton, cancelButton })
             {
                 button.FlatStyle = FlatStyle.Flat;
@@ -160,6 +185,39 @@ namespace CPortTerminal
                 button.ForeColor = textColor;
                 button.FlatAppearance.BorderColor = buttonBorderColor;
             }
+        }
+
+        private void EchoColorButton_Click(object? sender, EventArgs e)
+        {
+            using ColorDialog colorDialog = new()
+            {
+                Color = echoColor,
+                FullOpen = false
+            };
+
+            if (colorDialog.ShowDialog(this) == DialogResult.OK)
+            {
+                echoColor = colorDialog.Color;
+                UpdateEchoColorButton();
+            }
+        }
+
+        private void UpdateEchoColorButton()
+        {
+            echoColorButton.Text = FormatColor(echoColor);
+            echoColorButton.BackColor = echoColor;
+            echoColorButton.ForeColor = GetReadableTextColor(echoColor);
+        }
+
+        private static string FormatColor(Color color)
+        {
+            return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+        }
+
+        private static Color GetReadableTextColor(Color backgroundColor)
+        {
+            double brightness = backgroundColor.R * 0.299 + backgroundColor.G * 0.587 + backgroundColor.B * 0.114;
+            return brightness > 150 ? Color.Black : Color.White;
         }
 
         protected override void Dispose(bool disposing)
@@ -174,10 +232,34 @@ namespace CPortTerminal
 
         public string SelectedPort => portComboBox.Text;
 
+        public void RefreshPorts(IEnumerable<string> ports)
+        {
+            string selectedPort = portComboBox.Text;
+            string[] portList = ports.ToArray();
+
+            portComboBox.Items.Clear();
+            portComboBox.Items.AddRange(portList.Cast<object>().ToArray());
+
+            if (!string.IsNullOrWhiteSpace(selectedPort) && portList.Contains(selectedPort))
+            {
+                portComboBox.Text = selectedPort;
+            }
+            else if (portList.Length > 0)
+            {
+                portComboBox.SelectedIndex = 0;
+            }
+            else
+            {
+                portComboBox.SelectedIndex = -1;
+            }
+        }
+
         public string SelectedBaudRate => baudComboBox.Text;
 
         public bool StayOnTop => topMostCheckBox.Checked;
 
         public int BufferLines => (int)bufferLinesUpDown.Value;
+
+        public Color EchoColor => echoColor;
     }
 }

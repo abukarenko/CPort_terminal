@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32;
@@ -13,14 +14,24 @@ namespace CPortTerminal
         private const int HexBytesPerLine = 32;
         private const int MaxLogData = 512;
         private const int MacroButtonCount = 10;
+        private const int SendHistoryLimit = 32;
+        private const int WmDeviceChange = 0x0219;
+        private const int DbtDeviceArrival = 0x8000;
+        private const int DbtDeviceRemoveComplete = 0x8004;
+        private const int DbtDevNodesChanged = 0x0007;
+        private const string UserDataDirectoryName = "CPortTerminal";
+        private const string SettingsFileBaseName = "CPortTerminal.ini";
+        private const string LogFileBaseName = "CPortTerminal.log";
         private static readonly Color ConnectedTerminalBackColor = Color.FromArgb(0, 32, 0);
         private static readonly Color DisconnectedTerminalBackColor = Color.FromArgb(0, 0, 0);
+        private static readonly Color DefaultEchoTerminalForeColor = Color.Cyan;
         private static readonly IntPtr InvalidHandleValue = new(-1);
 
         private IntPtr portHandle = InvalidHandleValue;
         private Thread? readerThread;
         private volatile bool readerStopping;
         private StreamWriter? logWriter;
+        private Color echoTerminalForeColor = DefaultEchoTerminalForeColor;
         private bool applyingTopMost;
         private readonly StringBuilder terminalBuffer = new();
         private readonly object pendingTerminalLock = new();
@@ -32,16 +43,24 @@ namespace CPortTerminal
         private volatile bool hexDisplayEnabled;
         private Image? camouflageSkin;
         private readonly string[] macroTexts = new string[MacroButtonCount];
+        private readonly List<string> sendHistory = new();
         private readonly Button[] macroButtons = new Button[MacroButtonCount];
         private readonly ToolTip macroToolTip = new();
         private readonly ContextMenuStrip macroMenu = new();
         private readonly ToolStripMenuItem assignMacroItem = new("Assign");
+        private readonly System.Windows.Forms.Timer portRefreshTimer = new();
         private FlowLayoutPanel? macroPanel;
+        private SettingsForm? settingsForm;
+        private int sendHistoryNavigationIndex = -1;
+        private string sendHistoryDraft = string.Empty;
 
         public MainForm()
         {
             InitializeComponent();
+            Array.Fill(macroTexts, string.Empty);
             InitializeMacroButtons();
+            portRefreshTimer.Interval = 500;
+            portRefreshTimer.Tick += PortRefreshTimer_Tick;
 
             System.Drawing.Icon? applicationIcon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             if (applicationIcon != null)
@@ -57,7 +76,9 @@ namespace CPortTerminal
             bottomPanel.Height = 78;
             sendTextBox.Top = 43;
             sendButton.Top = 42;
-            crLfCheckBox.Top = 46;
+            echoCheckBox.Top = 5;
+            clsCheckBox.Top = 29;
+            crLfCheckBox.Top = 53;
 
             macroPanel = new FlowLayoutPanel
             {
@@ -70,7 +91,8 @@ namespace CPortTerminal
             };
             bottomPanel.Controls.Add(macroPanel);
             macroPanel.SendToBack();
-            macroToolTip.SetToolTip(clsCheckBox, "Clear screen before sending");
+            macroToolTip.SetToolTip(echoCheckBox, "Show sent commands in terminal");
+            macroToolTip.SetToolTip(clsCheckBox, "Clear send input after sending");
             assignMacroItem.Click += AssignMacroItem_Click;
             macroMenu.Items.Add(assignMacroItem);
 
@@ -122,7 +144,7 @@ namespace CPortTerminal
                 ApplySkin(macroPanel);
             }
 
-            foreach (CheckBox checkBox in new[] { dtrCheckBox, rtsCheckBox, holdCheckBox, hexCheckBox, clsCheckBox, crLfCheckBox })
+            foreach (CheckBox checkBox in new[] { dtrCheckBox, rtsCheckBox, holdCheckBox, hexCheckBox, echoCheckBox, clsCheckBox, crLfCheckBox })
             {
                 checkBox.BackColor = Color.Transparent;
                 checkBox.ForeColor = textColor;
@@ -140,11 +162,61 @@ namespace CPortTerminal
             control.BackgroundImageLayout = ImageLayout.Tile;
         }
 
-        private string SettingsFileName => Path.ChangeExtension(Application.ExecutablePath, ".ini");
+        private static string UserDataDirectory
+        {
+            get
+            {
+                string appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                if (!string.IsNullOrWhiteSpace(appDataPath))
+                {
+                    return Path.Combine(appDataPath, UserDataDirectoryName);
+                }
 
-        private string LogFileName => Path.ChangeExtension(Application.ExecutablePath, ".log");
+                string localAppDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                if (!string.IsNullOrWhiteSpace(localAppDataPath))
+                {
+                    return Path.Combine(localAppDataPath, UserDataDirectoryName);
+                }
+
+                return AppContext.BaseDirectory;
+            }
+        }
+
+        private string SettingsFileName => Path.Combine(UserDataDirectory, SettingsFileBaseName);
+
+        private string LegacySettingsFileName => Path.ChangeExtension(Application.ExecutablePath, ".ini");
+
+        private string LogFileName => Path.Combine(UserDataDirectory, LogFileBaseName);
+
+        private string ReadableSettingsFileName
+        {
+            get
+            {
+                if (File.Exists(SettingsFileName))
+                {
+                    return SettingsFileName;
+                }
+
+                return File.Exists(LegacySettingsFileName)
+                    ? LegacySettingsFileName
+                    : SettingsFileName;
+            }
+        }
 
         private bool IsConnected => portHandle != InvalidHandleValue;
+
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+
+            if (m.Msg == WmDeviceChange
+                && (m.WParam.ToInt32() == DbtDeviceArrival
+                    || m.WParam.ToInt32() == DbtDeviceRemoveComplete
+                    || m.WParam.ToInt32() == DbtDevNodesChanged))
+            {
+                SchedulePortRefresh();
+            }
+        }
 
         private void MainForm_Load(object? sender, EventArgs e)
         {
@@ -157,12 +229,16 @@ namespace CPortTerminal
             baudComboBox.Text = "19200";
 
             LoadSettings();
+            sendTextBox.TextChanged += SendTextBox_TextChanged;
+            sendTextBox.PreviewKeyDown += SendTextBox_PreviewKeyDown;
+            terminalTextBox.MouseDoubleClick += TerminalTextBox_MouseDoubleClick;
             SetConnected(false);
             SetStatusMessage("Ready");
         }
 
         private void MainForm_FormClosing(object? sender, FormClosingEventArgs e)
         {
+            portRefreshTimer.Stop();
             SaveSettings();
             trayIcon.Visible = false;
             CloseComPort();
@@ -182,6 +258,32 @@ namespace CPortTerminal
         private void LoadAvailablePorts()
         {
             string oldPort = portComboBox.Text;
+            List<string> ports = GetAvailablePorts();
+
+            ports.Sort(CompareComPorts);
+
+            portComboBox.Items.Clear();
+            portComboBox.Items.AddRange(ports.Cast<object>().ToArray());
+
+            if (!string.IsNullOrWhiteSpace(oldPort) && ports.Contains(oldPort))
+            {
+                portComboBox.Text = oldPort;
+            }
+            else if (ports.Count > 0)
+            {
+                portComboBox.SelectedIndex = 0;
+            }
+            else
+            {
+                portComboBox.SelectedIndex = -1;
+            }
+
+            SetConnected(IsConnected);
+            settingsForm?.RefreshPorts(ports);
+        }
+
+        private List<string> GetAvailablePorts()
+        {
             List<string> ports = new();
 
             try
@@ -204,17 +306,44 @@ namespace CPortTerminal
             }
 
             ports.Sort(CompareComPorts);
+            return ports;
+        }
 
-            portComboBox.Items.Clear();
-            portComboBox.Items.AddRange(ports.Cast<object>().ToArray());
-
-            if (!string.IsNullOrWhiteSpace(oldPort) && ports.Contains(oldPort))
+        private void SchedulePortRefresh()
+        {
+            if (IsConnected || IsDisposed)
             {
-                portComboBox.Text = oldPort;
+                return;
             }
-            else if (ports.Count > 0)
+
+            portRefreshTimer.Stop();
+            portRefreshTimer.Start();
+        }
+
+        private void PortRefreshTimer_Tick(object? sender, EventArgs e)
+        {
+            portRefreshTimer.Stop();
+
+            if (IsConnected || IsDisposed)
             {
-                portComboBox.SelectedIndex = 0;
+                return;
+            }
+
+            string oldPort = portComboBox.Text;
+            LoadAvailablePorts();
+            string newPort = portComboBox.Text;
+
+            if (string.Equals(oldPort, newPort, StringComparison.OrdinalIgnoreCase))
+            {
+                SetStatusMessage("Port list refreshed");
+            }
+            else if (string.IsNullOrWhiteSpace(newPort))
+            {
+                SetStatusMessage("No COM ports found");
+            }
+            else
+            {
+                SetStatusMessage($"Port list refreshed: {newPort} selected");
             }
         }
 
@@ -259,7 +388,7 @@ namespace CPortTerminal
 
             if (settings.TryGetValue("SendText", out string? sendText))
             {
-                sendTextBox.Text = sendText;
+                sendTextBox.Text = DecodeMacroText(sendText);
             }
 
             for (int index = 0; index < MacroButtonCount; index++)
@@ -271,6 +400,8 @@ namespace CPortTerminal
 
                 UpdateMacroHint(index);
             }
+
+            LoadSendHistory(settings);
 
             if (settings.TryGetValue("StayOnTop", out string? stayOnTop)
                 && bool.TryParse(stayOnTop, out bool value))
@@ -302,6 +433,18 @@ namespace CPortTerminal
                 clsCheckBox.Checked = clearValue;
             }
 
+            if (settings.TryGetValue("Echo", out string? echo)
+                && bool.TryParse(echo, out bool echoValue))
+            {
+                echoCheckBox.Checked = echoValue;
+            }
+
+            if (settings.TryGetValue("EchoColor", out string? echoColor)
+                && TryDecodeColor(echoColor, out Color echoColorValue))
+            {
+                echoTerminalForeColor = echoColorValue;
+            }
+
             if (settings.TryGetValue("BufferLines", out string? bufferLines)
                 && int.TryParse(bufferLines, out int lineLimit))
             {
@@ -325,12 +468,14 @@ namespace CPortTerminal
                 {
                     "Port=" + portComboBox.Text,
                     "Baud=" + baudComboBox.Text,
-                    "SendText=" + sendTextBox.Text,
+                    "SendText=base64:" + EncodeMacroText(sendTextBox.Text),
                     "StayOnTop=" + TopMost.ToString(),
                     "DtrOnOpen=" + dtrCheckBox.Checked.ToString(),
                     "RtsOnOpen=" + rtsCheckBox.Checked.ToString(),
                     "CrLf=" + crLfCheckBox.Checked.ToString(),
                     "ClearBeforeSend=" + clsCheckBox.Checked.ToString(),
+                    "Echo=" + echoCheckBox.Checked.ToString(),
+                    "EchoColor=" + EncodeColor(echoTerminalForeColor),
                     "BufferLines=" + terminalLineLimit.ToString(),
                     "HexDisplay=" + hexCheckBox.Checked.ToString(),
                     "WindowLeft=" + windowBounds.Left.ToString(),
@@ -341,6 +486,10 @@ namespace CPortTerminal
 
                 settings.AddRange(macroTexts.Select((macroText, index) =>
                     $"MacroF{index + 1}=base64:{EncodeMacroText(macroText)}"));
+                settings.Add("SendHistoryCount=" + sendHistory.Count.ToString());
+                settings.AddRange(sendHistory.Select((historyText, index) =>
+                    $"SendHistory{index + 1}=base64:{EncodeMacroText(historyText)}"));
+                EnsureFileDirectory(SettingsFileName);
                 File.WriteAllLines(SettingsFileName, settings);
             }
             catch (Exception ex)
@@ -396,18 +545,24 @@ namespace CPortTerminal
 
             try
             {
-                if (!File.Exists(SettingsFileName))
+                string settingsFileName = ReadableSettingsFileName;
+                if (!File.Exists(settingsFileName))
                 {
                     return settings;
                 }
 
-                foreach (string line in File.ReadLines(SettingsFileName))
+                foreach (string line in File.ReadLines(settingsFileName))
                 {
                     int separator = line.IndexOf('=');
                     if (separator > 0)
                     {
                         settings[line[..separator]] = line[(separator + 1)..];
                     }
+                }
+
+                if (!string.Equals(settingsFileName, SettingsFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    LogEvent("SETTINGS LOADED FROM LEGACY PATH " + settingsFileName);
                 }
             }
             catch (Exception ex)
@@ -418,6 +573,41 @@ namespace CPortTerminal
             return settings;
         }
 
+        private void LoadSendHistory(IReadOnlyDictionary<string, string> settings)
+        {
+            sendHistory.Clear();
+
+            int savedHistoryCount = SendHistoryLimit;
+            if (settings.TryGetValue("SendHistoryCount", out string? countText)
+                && int.TryParse(countText, out int parsedCount))
+            {
+                savedHistoryCount = Math.Clamp(parsedCount, 0, SendHistoryLimit);
+            }
+
+            for (int index = 0; index < savedHistoryCount; index++)
+            {
+                if (settings.TryGetValue($"SendHistory{index + 1}", out string? historyText))
+                {
+                    string decodedText = DecodeMacroText(historyText);
+                    if (decodedText.Length > 0)
+                    {
+                        sendHistory.Add(decodedText);
+                    }
+                }
+            }
+
+            ResetSendHistoryNavigation();
+        }
+
+        private static void EnsureFileDirectory(string fileName)
+        {
+            string? directoryName = Path.GetDirectoryName(fileName);
+            if (!string.IsNullOrWhiteSpace(directoryName))
+            {
+                Directory.CreateDirectory(directoryName);
+            }
+        }
+
         private void SetConnected(bool connected)
         {
             portComboBox.Enabled = !connected;
@@ -425,12 +615,13 @@ namespace CPortTerminal
             openButton.Enabled = connected || portComboBox.Items.Count > 0;
             openButton.Text = connected ? "Close" : "Open";
             closeButton.Enabled = connected;
-            sendTextBox.Enabled = connected;
+            sendTextBox.Enabled = true;
             sendButton.Enabled = connected;
             crLfCheckBox.Enabled = connected;
             clsCheckBox.Enabled = connected;
-            dtrCheckBox.Enabled = !connected;
-            rtsCheckBox.Enabled = !connected;
+            echoCheckBox.Enabled = connected;
+            dtrCheckBox.Enabled = true;
+            rtsCheckBox.Enabled = true;
             terminalOpenCloseItem.Text = connected ? "Close" : "Open";
             terminalTextBox.BackColor = connected ? ConnectedTerminalBackColor : DisconnectedTerminalBackColor;
             UpdatePortStatus();
@@ -446,6 +637,42 @@ namespace CPortTerminal
             portStatusLabel.Text = IsConnected
                 ? $"{portComboBox.Text} open, {baudComboBox.Text} baud"
                 : $"{SelectedPortText()}, {baudComboBox.Text} baud";
+        }
+
+        private void DtrCheckBox_CheckedChanged(object? sender, EventArgs e)
+        {
+            UpdateControlLine("DTR", dtrCheckBox.Checked, SetDtr, ClearDtr);
+        }
+
+        private void RtsCheckBox_CheckedChanged(object? sender, EventArgs e)
+        {
+            UpdateControlLine("RTS", rtsCheckBox.Checked, SetRts, ClearRts);
+        }
+
+        private void ApplyControlLineStates()
+        {
+            UpdateControlLine("DTR", dtrCheckBox.Checked, SetDtr, ClearDtr, showStatus: false);
+            UpdateControlLine("RTS", rtsCheckBox.Checked, SetRts, ClearRts, showStatus: false);
+        }
+
+        private void UpdateControlLine(string name, bool enabled, uint setCommand, uint clearCommand, bool showStatus = true)
+        {
+            if (!IsConnected)
+            {
+                return;
+            }
+
+            if (EscapeCommFunction(portHandle, enabled ? setCommand : clearCommand))
+            {
+                if (showStatus)
+                {
+                    SetStatusMessage($"{name} {(enabled ? "set" : "cleared")}");
+                }
+
+                return;
+            }
+
+            SetStatusMessage($"Could not update {name}");
         }
 
         private void SetStatusMessage(string message)
@@ -472,14 +699,16 @@ namespace CPortTerminal
             }
 
             bool wasTopMost = TopMost;
-            using SettingsForm settingsForm = new(
+            using SettingsForm settingsDialog = new(
                 portComboBox.Items.Cast<object>().Select(item => item.ToString() ?? string.Empty),
                 portComboBox.Text,
                 GetBaudRates(),
                 baudComboBox.Text,
                 wasTopMost,
                 !IsConnected,
-                terminalLineLimit);
+                terminalLineLimit,
+                echoTerminalForeColor);
+            settingsForm = settingsDialog;
 
             DialogResult result;
             try
@@ -489,7 +718,7 @@ namespace CPortTerminal
                     TopMost = false;
                 }
 
-                result = settingsForm.ShowDialog(this);
+                result = settingsDialog.ShowDialog(this);
 
                 if (result != DialogResult.OK)
                 {
@@ -498,16 +727,16 @@ namespace CPortTerminal
 
                 if (!IsConnected)
                 {
-                    portComboBox.Text = settingsForm.SelectedPort;
-                    baudComboBox.Text = settingsForm.SelectedBaudRate;
+                    portComboBox.Text = settingsDialog.SelectedPort;
+                    baudComboBox.Text = settingsDialog.SelectedBaudRate;
                 }
 
-                SetStayOnTop(settingsForm.StayOnTop);
-                terminalLineLimit = settingsForm.BufferLines;
+                SetStayOnTop(settingsDialog.StayOnTop);
+                echoTerminalForeColor = settingsDialog.EchoColor;
+                int terminalLengthBeforeTrim = terminalBuffer.Length;
+                terminalLineLimit = settingsDialog.BufferLines;
                 TrimTerminalBuffer();
-                terminalTextBox.Text = terminalBuffer.ToString();
-                terminalTextBox.SelectionStart = terminalTextBox.TextLength;
-                terminalTextBox.ScrollToCaret();
+                TrimTerminalDisplay(terminalLengthBeforeTrim - terminalBuffer.Length);
 
                 SaveSettings();
                 SetConnected(IsConnected);
@@ -515,6 +744,8 @@ namespace CPortTerminal
             }
             finally
             {
+                settingsForm = null;
+
                 if (wasTopMost && !IsDisposed)
                 {
                     TopMost = topMostCheckBox.Checked;
@@ -528,7 +759,7 @@ namespace CPortTerminal
         {
             if (IsConnected)
             {
-                CloseComPort();
+                CloseComPortFromUserAction();
                 AppendTerminalText("\r\n[Closed]\r\n");
                 SetStatusMessage("Port closed");
                 return;
@@ -579,11 +810,7 @@ namespace CPortTerminal
 
             SetupComm(portHandle, 4096, 4096);
             PurgeComm(portHandle, PurgeRxClear | PurgeTxClear);
-            EscapeCommFunction(portHandle, dtrCheckBox.Checked ? SetDtr : ClearDtr);
-            if (rtsCheckBox.Checked)
-            {
-                EscapeCommFunction(portHandle, SetRts);
-            }
+            ApplyControlLineStates();
 
             readerStopping = false;
             readerThread = new Thread(ReadLoop)
@@ -692,6 +919,12 @@ namespace CPortTerminal
             }
 
             SetConnected(false);
+        }
+
+        private void CloseComPortFromUserAction()
+        {
+            CloseComPort();
+            LoadAvailablePorts();
         }
 
         private void ReadLoop()
@@ -845,9 +1078,15 @@ namespace CPortTerminal
             SetStatusMessage(hexDisplayEnabled ? "HEX display on" : "HEX display off");
         }
 
+        private void EchoCheckBox_CheckedChanged(object? sender, EventArgs e)
+        {
+            SaveSettings();
+            SetStatusMessage(echoCheckBox.Checked ? "ECHO on" : "ECHO off");
+        }
+
         private void SendButton_Click(object? sender, EventArgs e)
         {
-            SendText(sendTextBox.Text);
+            SendCurrentEditText();
         }
 
         private void MacroButton_MouseClick(object? sender, MouseEventArgs e)
@@ -922,9 +1161,9 @@ namespace CPortTerminal
                 : text;
         }
 
-        private static string EncodeMacroText(string text)
+        private static string EncodeMacroText(string? text)
         {
-            return Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+            return Convert.ToBase64String(Encoding.UTF8.GetBytes(text ?? string.Empty));
         }
 
         private static string DecodeMacroText(string text)
@@ -945,25 +1184,116 @@ namespace CPortTerminal
             }
         }
 
+        private static string EncodeColor(Color color)
+        {
+            return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+        }
+
+        private static bool TryDecodeColor(string text, out Color color)
+        {
+            color = DefaultEchoTerminalForeColor;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+
+            try
+            {
+                color = ColorTranslator.FromHtml(text.Trim());
+                return true;
+            }
+            catch
+            {
+                if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int argb))
+                {
+                    color = Color.FromArgb(argb);
+                    return true;
+                }
+
+                return false;
+            }
+        }
+
         private void SendTextBox_KeyDown(object? sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Enter)
             {
                 e.SuppressKeyPress = true;
-                SendText(sendTextBox.Text);
-            }
-        }
-
-        private void SendText(string text, bool appendCrLf = true)
-        {
-            if (!IsConnected)
-            {
+                SendCurrentEditText();
                 return;
             }
 
-            if (clsCheckBox.Checked)
+            if (e.KeyCode == Keys.Up)
             {
-                ClearTerminal();
+                e.SuppressKeyPress = true;
+                NavigateSendHistory(-1);
+                return;
+            }
+
+            if (e.KeyCode == Keys.Down)
+            {
+                e.SuppressKeyPress = true;
+                NavigateSendHistory(1);
+                return;
+            }
+
+            ResetSendHistoryNavigation();
+        }
+
+        private void SendTextBox_PreviewKeyDown(object? sender, PreviewKeyDownEventArgs e)
+        {
+            if (e.KeyCode is Keys.Up or Keys.Down)
+            {
+                e.IsInputKey = true;
+            }
+        }
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            Keys keyCode = keyData & Keys.KeyCode;
+            Keys modifiers = keyData & Keys.Modifiers;
+
+            if (sendTextBox.Focused && modifiers == Keys.None)
+            {
+                if (keyCode == Keys.Up)
+                {
+                    NavigateSendHistory(-1);
+                    return true;
+                }
+
+                if (keyCode == Keys.Down)
+                {
+                    NavigateSendHistory(1);
+                    return true;
+                }
+            }
+
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        private void SendTextBox_TextChanged(object? sender, EventArgs e)
+        {
+            SaveSettings();
+        }
+
+        private void SendCurrentEditText()
+        {
+            string text = sendTextBox.Text;
+            bool sent = SendText(text);
+            if (sent)
+            {
+                AddSendHistory(text);
+            }
+
+            SaveSettings();
+            ResetSendHistoryNavigation();
+        }
+
+        private bool SendText(string text, bool appendCrLf = true)
+        {
+            if (!IsConnected)
+            {
+                return false;
             }
 
             string outgoingText = appendCrLf && crLfCheckBox.Checked ? text + "\r\n" : text;
@@ -974,31 +1304,134 @@ namespace CPortTerminal
                 SetStatusMessage("Send failed");
                 ShowLastWin32Error("Could not send data.");
                 CloseComPort();
-                return;
+                return false;
             }
 
             if (written > 0)
             {
                 LogEvent("SEND BUTTON CLICK");
                 LogData("TX", data.Take((int)written).ToArray());
+                if (echoCheckBox.Checked)
+                {
+                    AppendTerminalText(Encoding.Default.GetString(data, 0, (int)written), echoTerminalForeColor);
+                }
+
                 SetStatusMessage($"TX {written} bytes");
+                if (clsCheckBox.Checked)
+                {
+                    sendTextBox.Clear();
+                }
             }
 
             sendTextBox.Focus();
+            return written > 0;
+        }
+
+        private void AddSendHistory(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return;
+            }
+
+            sendHistory.Add(text);
+            while (sendHistory.Count > SendHistoryLimit)
+            {
+                sendHistory.RemoveAt(0);
+            }
+        }
+
+        private void NavigateSendHistory(int direction)
+        {
+            if (sendHistory.Count == 0)
+            {
+                return;
+            }
+
+            if (sendHistoryNavigationIndex == -1)
+            {
+                sendHistoryDraft = sendTextBox.Text;
+                if (direction < 0)
+                {
+                    sendHistoryNavigationIndex = sendHistory.Count > 1
+                        && string.Equals(sendHistoryDraft, sendHistory[^1], StringComparison.Ordinal)
+                            ? sendHistory.Count - 2
+                            : sendHistory.Count - 1;
+                }
+                else
+                {
+                    sendHistoryNavigationIndex = sendHistory.Count > 1
+                        && string.Equals(sendHistoryDraft, sendHistory[0], StringComparison.Ordinal)
+                            ? 1
+                            : 0;
+                }
+            }
+            else
+            {
+                int step = direction < 0 ? -1 : 1;
+                sendHistoryNavigationIndex =
+                    (sendHistoryNavigationIndex + step + sendHistory.Count) % sendHistory.Count;
+            }
+
+            SetSendTextBoxText(sendHistory[sendHistoryNavigationIndex]);
+        }
+
+        private void ResetSendHistoryNavigation()
+        {
+            sendHistoryNavigationIndex = -1;
+            sendHistoryDraft = string.Empty;
+        }
+
+        private void SetSendTextBoxText(string text)
+        {
+            sendTextBox.Text = text;
+            sendTextBox.SelectionStart = sendTextBox.TextLength;
+            sendTextBox.SelectionLength = 0;
         }
 
         private void AppendTerminalText(string text)
         {
+            AppendTerminalText(text, terminalTextBox.ForeColor);
+        }
+
+        private void AppendTerminalText(string text, Color color)
+        {
+            if (text.Length == 0)
+            {
+                return;
+            }
+
             terminalBuffer.Append(text);
+            int lengthAfterAppend = terminalBuffer.Length;
             TrimTerminalBuffer();
-            terminalTextBox.Text = terminalBuffer.ToString();
+            int removedChars = lengthAfterAppend - terminalBuffer.Length;
+
             terminalTextBox.SelectionStart = terminalTextBox.TextLength;
-            terminalTextBox.ScrollToCaret();
+            terminalTextBox.SelectionLength = 0;
+            terminalTextBox.SelectionColor = color;
+            terminalTextBox.AppendText(text);
+
+            TrimTerminalDisplay(removedChars);
         }
 
         private void TrimTerminalBuffer()
         {
             TrimTextBufferToLastLines(terminalBuffer, terminalLineLimit);
+        }
+
+        private void TrimTerminalDisplay(int removedChars)
+        {
+            if (removedChars > 0 && terminalTextBox.TextLength > 0)
+            {
+                int removeCount = Math.Min(removedChars, terminalTextBox.TextLength);
+                terminalTextBox.Select(0, removeCount);
+                terminalTextBox.SelectedText = string.Empty;
+            }
+
+            terminalTextBox.SelectionStart = terminalTextBox.TextLength;
+            terminalTextBox.SelectionLength = 0;
+            terminalTextBox.SelectionColor = terminalTextBox.ForeColor;
+            terminalTextBox.ScrollToCaret();
         }
 
         private static void TrimTextBufferToLastLines(StringBuilder buffer, int maxLines)
@@ -1073,7 +1506,7 @@ namespace CPortTerminal
 
         private void CloseButton_Click(object? sender, EventArgs e)
         {
-            CloseComPort();
+            CloseComPortFromUserAction();
             AppendTerminalText("\r\n[Closed]\r\n");
             SetStatusMessage("Port closed");
         }
@@ -1106,6 +1539,14 @@ namespace CPortTerminal
             ClearTerminal();
         }
 
+        private void TerminalTextBox_MouseDoubleClick(object? sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                ClearTerminal();
+            }
+        }
+
         private void ClearTerminal()
         {
             terminalBuffer.Clear();
@@ -1117,6 +1558,7 @@ namespace CPortTerminal
             }
 
             terminalTextBox.Clear();
+            terminalTextBox.SelectionColor = terminalTextBox.ForeColor;
             SetStatusMessage("Terminal cleared");
         }
 
@@ -1174,6 +1616,7 @@ namespace CPortTerminal
         {
             try
             {
+                EnsureFileDirectory(LogFileName);
                 logWriter = new StreamWriter(LogFileName, append: true, Encoding.UTF8)
                 {
                     AutoFlush = true
@@ -1268,6 +1711,7 @@ namespace CPortTerminal
         private const uint SetDtr = 5;
         private const uint ClearDtr = 6;
         private const uint SetRts = 3;
+        private const uint ClearRts = 4;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct Dcb

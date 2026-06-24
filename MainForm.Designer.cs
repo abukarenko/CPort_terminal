@@ -9,17 +9,18 @@ namespace CPortTerminal
         private Button openButton;
         private Button closeButton;
         private Button exitButton;
-        private CheckBox dtrCheckBox;
-        private CheckBox rtsCheckBox;
-        private CheckBox holdCheckBox;
-        private CheckBox hexCheckBox;
+        private ReadableCheckBox dtrCheckBox;
+        private ReadableCheckBox rtsCheckBox;
+        private ReadableCheckBox holdCheckBox;
+        private ReadableCheckBox hexCheckBox;
         private CheckBox topMostCheckBox;
-        private TextBox terminalTextBox;
+        private RichTextBox terminalTextBox;
         private Panel bottomPanel;
         private TextBox sendTextBox;
         private Button sendButton;
-        private CheckBox clsCheckBox;
-        private CheckBox crLfCheckBox;
+        private ReadableCheckBox echoCheckBox;
+        private ReadableCheckBox clsCheckBox;
+        private ReadableCheckBox crLfCheckBox;
         private NotifyIcon trayIcon;
         private ContextMenuStrip trayMenu;
         private ToolStripMenuItem traySettingsItem;
@@ -39,6 +40,7 @@ namespace CPortTerminal
         {
             if (disposing)
             {
+                portRefreshTimer.Dispose();
                 camouflageSkin?.Dispose();
                 macroToolTip.Dispose();
                 macroMenu.Dispose();
@@ -59,10 +61,10 @@ namespace CPortTerminal
             openButton = new Button();
             exitButton = new Button();
             closeButton = new Button();
-            dtrCheckBox = new CheckBox();
-            rtsCheckBox = new CheckBox();
-            holdCheckBox = new CheckBox();
-            hexCheckBox = new CheckBox();
+            dtrCheckBox = new ReadableCheckBox();
+            rtsCheckBox = new ReadableCheckBox();
+            holdCheckBox = new ReadableCheckBox();
+            hexCheckBox = new ReadableCheckBox();
             portComboBox = new ComboBox();
             baudComboBox = new ComboBox();
             topMostCheckBox = new CheckBox();
@@ -72,12 +74,13 @@ namespace CPortTerminal
             terminalCopyItem = new ToolStripMenuItem();
             terminalClearItem = new ToolStripMenuItem();
             terminalTopMostItem = new ToolStripMenuItem();
-            terminalTextBox = new TextBox();
+            terminalTextBox = new RichTextBox();
             bottomPanel = new Panel();
             sendTextBox = new TextBox();
             sendButton = new Button();
-            clsCheckBox = new CheckBox();
-            crLfCheckBox = new CheckBox();
+            echoCheckBox = new ReadableCheckBox();
+            clsCheckBox = new ReadableCheckBox();
+            crLfCheckBox = new ReadableCheckBox();
             trayMenu = new ContextMenuStrip(components);
             traySettingsItem = new ToolStripMenuItem();
             trayTopMostItem = new ToolStripMenuItem();
@@ -151,6 +154,7 @@ namespace CPortTerminal
             dtrCheckBox.TabIndex = 2;
             dtrCheckBox.Text = "DTR";
             dtrCheckBox.UseVisualStyleBackColor = true;
+            dtrCheckBox.CheckedChanged += DtrCheckBox_CheckedChanged;
             //
             // rtsCheckBox
             //
@@ -161,6 +165,7 @@ namespace CPortTerminal
             rtsCheckBox.TabIndex = 3;
             rtsCheckBox.Text = "RTS";
             rtsCheckBox.UseVisualStyleBackColor = true;
+            rtsCheckBox.CheckedChanged += RtsCheckBox_CheckedChanged;
             //
             // holdCheckBox
             // 
@@ -263,6 +268,7 @@ namespace CPortTerminal
             // 
             terminalTextBox.BackColor = Color.Black;
             terminalTextBox.ContextMenuStrip = terminalMenu;
+            terminalTextBox.DetectUrls = false;
             terminalTextBox.Dock = DockStyle.Fill;
             terminalTextBox.Font = new Font("Consolas", 10F);
             terminalTextBox.ForeColor = Color.Lime;
@@ -270,7 +276,7 @@ namespace CPortTerminal
             terminalTextBox.Multiline = true;
             terminalTextBox.Name = "terminalTextBox";
             terminalTextBox.ReadOnly = true;
-            terminalTextBox.ScrollBars = ScrollBars.Both;
+            terminalTextBox.ScrollBars = RichTextBoxScrollBars.Both;
             terminalTextBox.Size = new Size(1017, 407);
             terminalTextBox.TabIndex = 1;
             terminalTextBox.WordWrap = false;
@@ -279,6 +285,7 @@ namespace CPortTerminal
             // 
             bottomPanel.Controls.Add(sendTextBox);
             bottomPanel.Controls.Add(sendButton);
+            bottomPanel.Controls.Add(echoCheckBox);
             bottomPanel.Controls.Add(clsCheckBox);
             bottomPanel.Controls.Add(crLfCheckBox);
             bottomPanel.Dock = DockStyle.Bottom;
@@ -308,14 +315,26 @@ namespace CPortTerminal
             sendButton.UseVisualStyleBackColor = true;
             sendButton.Click += SendButton_Click;
             //
+            // echoCheckBox
+            //
+            echoCheckBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            echoCheckBox.AutoSize = true;
+            echoCheckBox.Location = new Point(939, 5);
+            echoCheckBox.Name = "echoCheckBox";
+            echoCheckBox.Size = new Size(55, 19);
+            echoCheckBox.TabIndex = 2;
+            echoCheckBox.Text = "ECHO";
+            echoCheckBox.UseVisualStyleBackColor = true;
+            echoCheckBox.CheckedChanged += EchoCheckBox_CheckedChanged;
+            //
             // clsCheckBox
             //
             clsCheckBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             clsCheckBox.AutoSize = true;
-            clsCheckBox.Location = new Point(939, 21);
+            clsCheckBox.Location = new Point(939, 29);
             clsCheckBox.Name = "clsCheckBox";
             clsCheckBox.Size = new Size(45, 19);
-            clsCheckBox.TabIndex = 2;
+            clsCheckBox.TabIndex = 3;
             clsCheckBox.Text = "CLS";
             clsCheckBox.UseVisualStyleBackColor = true;
             // 
@@ -325,10 +344,10 @@ namespace CPortTerminal
             crLfCheckBox.AutoSize = true;
             crLfCheckBox.Checked = true;
             crLfCheckBox.CheckState = CheckState.Checked;
-            crLfCheckBox.Location = new Point(939, 46);
+            crLfCheckBox.Location = new Point(939, 53);
             crLfCheckBox.Name = "crLfCheckBox";
             crLfCheckBox.Size = new Size(58, 19);
-            crLfCheckBox.TabIndex = 3;
+            crLfCheckBox.TabIndex = 4;
             crLfCheckBox.Text = "CR/LF";
             crLfCheckBox.UseVisualStyleBackColor = true;
             // 
